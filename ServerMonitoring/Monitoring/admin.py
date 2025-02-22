@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Server, ServerStat
+from .models import Server, ServerStat, WarningStat
 
-admin.site.register(Server)
-admin.site.register(ServerStat)
+admin.site.register([Server, ServerStat, WarningStat])
+
