@@ -11,22 +11,22 @@ class Server(models.Model):
     cputimelimit = models.IntegerField(default=15)
     memtimelimit = models.IntegerField(default=15)
     disktimelimit = models.IntegerField(default=15)
-    maxtimeout = models.DurationField(timedelta(minutes=60))
+    maxtimeout = models.DurationField(default=timedelta(minutes=60))
 
     def __str__(self):
         return self.name
 
 class Stat(models.Model):
-    serverId = models.ForeignKey(Server, on_delete=models.CASCADE)
-    cpuLoad = models.FloatField() 
-    memLoad = models.FloatField()
-    diskLoad = models.FloatField()
-    upTime = models.DurationField()
-    currentTime = models.DateTimeField()
+    serverid = models.ForeignKey(Server, on_delete=models.CASCADE)
+    cpuload = models.FloatField() 
+    memload = models.FloatField()
+    diskload = models.FloatField()
+    uptime = models.DurationField()
+    currenttime = models.DateTimeField()
     
 
     def __str__(self):
-        return str(self.serverId)
+        return str(self.serverid)
     class Meta:
         abstract=True
 
@@ -34,5 +34,5 @@ class ServerStat(Stat):
     pass
 
 class WarningStat(Stat):
-    servershutdown = models.DurationField(default=timedelta(minutes=00))
+    serverdowntime = models.DurationField(default=timedelta(minutes=00))
     

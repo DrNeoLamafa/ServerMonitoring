@@ -1,11 +1,8 @@
-
-from django.shortcuts import render
-
 from .models import *
 import requests
 from datetime import datetime, timedelta, timezone
 import re
-from django_q.tasks import Schedule
+
 
 def CheckState():
         server_obj_list = []
@@ -22,12 +19,12 @@ def CheckState():
                 cleanDate = re.sub('[dhms]', '', data['uptime']).split(' ')
                 delta = timedelta(days=int(cleanDate[0]), hours=int(cleanDate[1]), minutes=int(cleanDate[2]), seconds=int(cleanDate[3]))
                 res = ServerStat(
-                    serverId = server, 
-                    cpuLoad = data['cpu'], 
-                    memLoad = data['ram'], 
-                    diskLoad = data['disk'], 
-                    upTime = delta, 
-                    currentTime = datetime.now())
+                    serverid = server, 
+                    cpuload = data['cpu'], 
+                    memload = data['ram'], 
+                    diskload = data['disk'], 
+                    uptime = delta, 
+                    currenttime = datetime.now())
                 
                 server_obj_list.append(res)
             
@@ -37,8 +34,8 @@ def CheckState():
         
 def RunCheck():
     
-    l = CheckState()
-    saveToBase(l)
+    server_obj_list = CheckState()
+    saveToBase(server_obj_list)
     
     dectectwarning()
 
@@ -46,48 +43,62 @@ def saveToBase(servers):
     ServerStat.objects.bulk_create(servers)
 
 def dectectwarning():
-    sheludetime = Schedule.objects.get().minutes
-    
+   
     for server in Server.objects.all():
 
-        laststamp = ServerStat.objects.filter(serverId=server).order_by('-currentTime')[:1].first()
-       
-        if (laststamp.currentTime < datetime.now(timezone.utc) - server.maxtimeout):
-             shutdown = datetime.now(timezone.utc)-laststamp.currentTime
-             print(type(shutdown))
-             WarningStat.objects.create(
-                  serverId=laststamp.serverId, 
-                  cpuLoad=0, 
-                  memLoad=0, 
-                  diskLoad=0, 
-                  upTime=timedelta(days=0, hours=0, minutes=0), 
-                  currentTime=datetime.now(), 
-                  servershutdown=timedelta(days=shutdown.days, seconds=shutdown.seconds))
-
-        else: 
-            memdelta = laststamp.currentTime - timedelta(minutes=server.memtimelimit)
-            cpudelta = laststamp.currentTime - timedelta(minutes=server.cputimelimit)
-            diskdelta = laststamp.currentTime - timedelta(minutes=server.disktimelimit)
-
-            memtimeseries = ServerStat.objects.filter(serverId=server).filter(currentTime__range=(memdelta, laststamp.currentTime))
-            cputimeseries = ServerStat.objects.filter(serverId=server).filter(currentTime__range=(cpudelta, laststamp.currentTime))
-            disktimeseries = ServerStat.objects.filter(serverId=server).filter(currentTime__range=(diskdelta, laststamp.currentTime))
+        laststamp = ServerStat.objects.filter(serverid=server).order_by('-currenttime')[:1].first()
+        if (laststamp is None):
+            
+            continue
+       # если сервер в таймауте больше лимита
         
+        if (laststamp.currenttime < datetime.now() - server.maxtimeout):
+            
+            shutdown = datetime.now() - laststamp.currenttime
+            WarningStat.objects.create(
+                serverid=laststamp.serverid, 
+                cpuload=0, 
+                memload=0, 
+                diskload=0, 
+                uptime=timedelta(days=0, hours=0, minutes=0), 
+                currenttime=datetime.now(), 
+                serverdowntime=timedelta(days=shutdown.days, seconds=shutdown.seconds)) 
+        
+        else: 
+
+            cputimelimit = timedelta(minutes=server.cputimelimit)
+            memtimelimit = timedelta(minutes=server.memtimelimit)
+            disktimelimit = timedelta(minutes=server.disktimelimit)
+            #если аптайм больше любого из параметров, то можно проверять 
+           
+            if any([laststamp.uptime > limit for limit in [cputimelimit, memtimelimit, disktimelimit]]):     
                 
-            if any(
-                [highornot(server.cpulimit, 'cpuLoad', cputimeseries),
-                highornot(server.memlimit, 'memLoad', memtimeseries),
-                highornot(server.disklimit, 'diskLoad', disktimeseries),]
-            ):
+                #окна по временным лимитам для каждого параметра
+                memdelta = laststamp.currenttime - memtimelimit
+                cpudelta = laststamp.currenttime - cputimelimit
+                diskdelta = laststamp.currenttime - disktimelimit
+
+                # наборы данных в диапазоне по времени
                 
-                    WarningStat.objects.create(
-                         serverId=laststamp.serverId,
-                         cpuLoad=laststamp.cpuLoad,
-                         memLoad=laststamp.memLoad, 
-                         diskLoad=laststamp.diskLoad, 
-                         upTime=laststamp.upTime, 
-                         currentTime=laststamp.currentTime)
-                #print(highornot(server.memlimit, 'memLoad', t[:2])) 
+                memtimeseries = ServerStat.objects.filter(serverid=server).filter(currenttime__range=(memdelta, laststamp.currenttime))
+                cputimeseries = ServerStat.objects.filter(serverid=server).filter(currenttime__range=(cpudelta, laststamp.currenttime))
+                disktimeseries = ServerStat.objects.filter(serverid=server).filter(currenttime__range=(diskdelta, laststamp.currenttime))
+            
+                # если любой из параметров вышел за лимит - warning
+                if any(
+                    [highornot(server.cpulimit, 'cpuload', cputimeseries),
+                    highornot(server.memlimit, 'memload', memtimeseries),
+                    highornot(server.disklimit, 'diskload', disktimeseries),]
+                ):
+                    
+                        WarningStat.objects.create(
+                            serverid=laststamp.serverid,
+                            cpuload=laststamp.cpuload,
+                            memload=laststamp.memload, 
+                            diskload=laststamp.diskload, 
+                            uptime=laststamp.uptime, 
+                            currenttime=laststamp.currenttime)
+                    
      
 def highornot(limit, part, dataseries):
     return all([getattr(stamp, part) > limit for stamp in dataseries])     
